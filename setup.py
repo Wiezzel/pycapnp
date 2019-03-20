@@ -136,10 +136,11 @@ if use_cython:
     extensions = cythonize('capnp/lib/*.pyx')
 else:
     extensions = [Extension("capnp.lib.capnp", ["capnp/lib/capnp.cpp"],
-                            include_dirs=["."],
+                            include_dirs=[".", "C:\Program Files (x86)\Cap'n Proto\include", "C:\Program Files\OpenSSL-Win64\include"],
+                            library_dirs=["C:\Program Files (x86)\Cap'n Proto\lib", "C:\Program Files\OpenSSL-Win64\lib"],
                             language='c++',
                             extra_compile_args=['--std=c++11'],
-                            libraries=['capnpc', 'capnp-rpc', 'capnp', 'kj-async', 'kj'])]
+                            libraries=['capnpc', 'capnp-rpc', 'capnp', 'kj-async', 'kj', 'kj-tls', 'ws2_32', 'Advapi32', 'libssl', 'libcrypto'])]
 
 setup(
     name="pycapnp",

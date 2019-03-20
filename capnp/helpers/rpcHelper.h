@@ -5,6 +5,7 @@
 #include "capnp/rpc-twoparty.h"
 #include "Python.h"
 #include "capabilityHelper.h"
+#include "kj/compat/tls.h"
 
 extern "C" {
    capnp::Capability::Client * call_py_restorer(PyObject *, capnp::AnyPointer::Reader &);
@@ -182,6 +183,32 @@ kj::Promise<PyObject *> connectServer(kj::TaskSet & tasks, capnp::Capability::Cl
       auto listener = addr->listen();
       portFulfiller->fulfill(listener->getPort());
       acceptLoop(tasks, client, kj::mv(listener));
+    })));
+
+    return portPromise.addBranch().then([&](unsigned int port) { return PyLong_FromUnsignedLong(port); });
+}
+
+kj::Promise<PyObject *> connectTLSServer(kj::TaskSet & tasks, capnp::Capability::Client client, kj::AsyncIoContext * context, kj::StringPtr bindAddress, kj::StringPtr pemKey, kj::StringPtr pemCert, kj::StringPtr password) {
+    auto paf = kj::newPromiseAndFulfiller<unsigned int>();
+    auto portPromise = paf.promise.fork();
+
+    tasks.add(context->provider->getNetwork().parseAddress(bindAddress)
+        .then(kj::mvCapture(paf.fulfiller,
+          [&, client](kj::Own<kj::PromiseFulfiller<unsigned int>>&& portFulfiller,
+                 kj::Own<kj::NetworkAddress>&& addr) mutable {
+      auto listener = addr->listen();
+      portFulfiller->fulfill(listener->getPort());
+
+      kj::TlsKeypair keypair = {
+        kj::TlsPrivateKey(pemKey, password),
+        kj::TlsCertificate(pemCert)
+      };
+      kj::TlsContext::Options options;
+      options.defaultKeypair = keypair;
+      auto context = new kj::TlsContext(options);
+      auto tls_listener = context->wrapPort(kj::mv(listener));
+
+      acceptLoop(tasks, client, kj::mv(tls_listener));
     })));
 
     return portPromise.addBranch().then([&](unsigned int port) { return PyLong_FromUnsignedLong(port); });

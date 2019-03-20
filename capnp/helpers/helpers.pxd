@@ -35,6 +35,7 @@ cdef extern from "capnp/helpers/rpcHelper.h":
     RpcSystem makeRpcClientWithRestorer(TwoPartyVatNetwork&, PyRestorer&)
     PyPromise connectServerRestorer(TaskSet &, PyRestorer &, AsyncIoContext *, StringPtr)
     PyPromise connectServer(TaskSet &, Capability.Client, AsyncIoContext *, StringPtr)
+    PyPromise connectTLSServer(TaskSet &, Capability.Client, AsyncIoContext *, StringPtr, StringPtr, StringPtr, StringPtr)
 
 cdef extern from "capnp/helpers/serialize.h":
     ByteArray messageToPackedBytes(MessageBuilder &, size_t wordCount)

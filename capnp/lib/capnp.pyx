@@ -1,7 +1,7 @@
 # capnp.pyx
 # distutils: language = c++
 # distutils: extra_compile_args = --std=c++11
-# distutils: libraries = capnpc capnp-rpc capnp kj-async kj
+# distutils: libraries = capnpc capnp-rpc capnp kj-async kj kj-tls
 # distutils: include_dirs = .
 # cython: c_string_type = str
 # cython: c_string_encoding = default
@@ -2355,7 +2355,8 @@ cdef class TwoPartyServer:
     cdef capnp.ErrorHandler _error_handler
 
     def __init__(self, socket, restorer=None, server_socket=None, bootstrap=None,
-                 traversal_limit_in_words=None, nesting_limit=None):
+                 traversal_limit_in_words=None, nesting_limit=None,
+                 tls_key_path=None, tls_cert_path=None, tls_key_pass=""):
         if not restorer and not bootstrap:
             raise KjException("You must provide either a bootstrap interface or a restorer (deperecated) to a server constructor.")
 
@@ -2365,7 +2366,14 @@ cdef class TwoPartyServer:
         self._bootstrap = None
 
         if isinstance(socket, basestring):
-            self._connect(socket, restorer, bootstrap)
+            if bootstrap and tls_key_path and tls_cert_path:
+                with open(tls_key_path, 'r') as f:
+                    pem_key = f.read()
+                with open(tls_cert_path, 'r') as f:
+                    pem_cert = f.read()
+                self._connect_tls(socket, bootstrap, pem_key, pem_cert, tls_key_pass)
+            else:
+                self._connect(socket, restorer, bootstrap)
         else:
             self._orig_stream = socket
             self._stream = _FdAsyncIoStream(socket.fileno())
@@ -2402,6 +2410,28 @@ cdef class TwoPartyServer:
             Py_INCREF(self._bootstrap)
             schema = bootstrap.schema
             self.port_promise = Promise()._init(helpers.connectServer(deref(self._task_set), helpers.server_to_client(schema.thisptr, <PyObject *>bootstrap), loop.thisptr, temp_string))
+
+    cpdef _connect_tls(self, host_string, bootstrap, pem_key, pem_cert, password):
+        cdef _InterfaceSchema schema
+        cdef _EventLoop loop = C_DEFAULT_EVENT_LOOP_GETTER()
+        cdef capnp.StringPtr host_string_ptr = capnp.StringPtr(<char*>host_string, len(host_string))
+        cdef capnp.StringPtr pem_key_ptr = capnp.StringPtr(<char*>pem_key, len(pem_key))
+        cdef capnp.StringPtr pem_cert_ptr = capnp.StringPtr(<char*>pem_cert, len(pem_cert))
+        cdef capnp.StringPtr pass_ptr = capnp.StringPtr(<char*>password, len(password))
+        self._task_set = new capnp.TaskSet(self._error_handler)
+
+        self._bootstrap = bootstrap
+        Py_INCREF(self._bootstrap)
+        schema = bootstrap.schema
+        self.port_promise = Promise()._init(helpers.connectTLSServer(
+            deref(self._task_set),
+            helpers.server_to_client(schema.thisptr, <PyObject *>bootstrap),
+            loop.thisptr,
+            host_string_ptr,
+            pem_key_ptr,
+            pem_cert_ptr,
+            pass_ptr
+        ))
 
     def _decref(self):
         Py_DECREF(self._bootstrap)
